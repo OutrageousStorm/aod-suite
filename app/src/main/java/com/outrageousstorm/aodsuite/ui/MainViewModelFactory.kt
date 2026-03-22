@@ -9,6 +9,6 @@ class MainViewModelFactory(private val context: Context) : ViewModelProvider.Fac
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         val repo = AodRepository(context.cacheDir, context.contentResolver)
-        return MainViewModel(repo) as T
+        return MainViewModel(repo, context.packageName) as T
     }
 }
