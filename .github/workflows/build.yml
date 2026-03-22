@@ -20,13 +20,14 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+      - name: Install Gradle 8.4
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.4'
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -35,7 +36,7 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
-      - name: Create WIP Release (on push to main)
+      - name: Create WIP Release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
@@ -64,13 +65,8 @@ jobs:
             ### Install
             Enable "Install from unknown sources" → install the APK → open Shizuku → grant permission to AOD Suite.
 
-            ### Known limitations in this WIP
-            - Blurred wallpaper path works on AOSP/Pixel; Samsung & Xiaomi may need a different path
-            - Brightness float setting is device-dependent (Pixels + Motorola confirmed)
-            - No UI polish yet
-
             ---
-            Built automatically by GitHub Actions from commit ${{ github.sha }}
+            Built from commit ${{ github.sha }}
           files: app/build/outputs/apk/debug/*.apk
           prerelease: true
           make_latest: false
