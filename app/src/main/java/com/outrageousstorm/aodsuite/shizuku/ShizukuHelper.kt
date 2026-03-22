@@ -29,46 +29,46 @@ object ShizukuHelper {
     private var serviceConnection: ServiceConnection? = null
 
     val isAvailable: Boolean
-        get() = try { Shizuku.pingBinder() } catch (e: Exception) { false }
+        get() = try { Shizuku.pingBinder() } catch (_: Exception) { false }
 
     val isGranted: Boolean
         get() = try {
             Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
-        } catch (e: Exception) { false }
+        } catch (_: Exception) { false }
 
     fun requestPermission(requestCode: Int = SHIZUKU_REQUEST_CODE) {
-        Shizuku.requestPermission(requestCode)
+        try { Shizuku.requestPermission(requestCode) } catch (e: Exception) {
+            Log.e(TAG, "requestPermission failed", e)
+        }
     }
 
     fun unbind() {
-        serviceConnection?.let {
-            try { Shizuku.unbindUserService(userServiceArgs, it, true) } catch (_: Exception) {}
-        }
+        try {
+            serviceConnection?.let { Shizuku.unbindUserService(userServiceArgs, it, true) }
+        } catch (_: Exception) {}
         shellService = null
         serviceConnection = null
     }
 
-    private val userServiceArgs: Shizuku.UserServiceArgs by lazy {
+    private val userServiceArgs by lazy {
         Shizuku.UserServiceArgs(
-            ComponentName(
-                "com.outrageousstorm.aodsuite",
-                ShellService::class.java.name
-            )
+            ComponentName("com.outrageousstorm.aodsuite", ShellService::class.java.name)
         )
             .daemon(false)
             .processNameSuffix("shell_service")
             .debuggable(false)
-            .version(3)
+            .version(4)
     }
 
     private suspend fun getService(): IShellService? {
         shellService?.let { return it }
         if (!isAvailable || !isGranted) return null
+
         return withTimeoutOrNull(8_000) {
             suspendCancellableCoroutine { cont ->
                 val conn = object : ServiceConnection {
                     override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-                        val svc = IShellService.Stub.asInterface(binder)
+                        val svc = runCatching { IShellService.Stub.asInterface(binder) }.getOrNull()
                         shellService = svc
                         serviceConnection = this
                         if (cont.isActive) cont.resume(svc)
@@ -78,9 +78,7 @@ object ShizukuHelper {
                     }
                 }
                 serviceConnection = conn
-                try {
-                    Shizuku.bindUserService(userServiceArgs, conn)
-                } catch (e: Exception) {
+                runCatching { Shizuku.bindUserService(userServiceArgs, conn) }.onFailure { e ->
                     Log.e(TAG, "bindUserService failed", e)
                     if (cont.isActive) cont.resume(null)
                 }
@@ -89,36 +87,28 @@ object ShizukuHelper {
     }
 
     suspend fun exec(command: String): ShellResult = withContext(Dispatchers.IO) {
-        Log.d(TAG, "exec: $command")
-        if (!isAvailable) return@withContext ShellResult("", "Shizuku not running", -1)
-        if (!isGranted) return@withContext ShellResult("", "Shizuku permission not granted", -1)
-        val svc = getService() ?: return@withContext ShellResult("", "Could not bind shell service", -1)
-        try {
+        if (!isAvailable) return@withContext err("Shizuku not running")
+        if (!isGranted)   return@withContext err("Shizuku permission not granted")
+        val svc = runCatching { getService() }.getOrNull()
+            ?: return@withContext err("Could not bind shell service")
+        runCatching {
             val raw = svc.exec(command)
-            val lines = raw.split("\n", limit = 3)
-            val exit = lines.getOrNull(0)?.removePrefix("EXIT:")?.toIntOrNull() ?: -1
-            val out  = lines.getOrNull(1)?.removePrefix("OUT:") ?: ""
-            val err  = lines.getOrNull(2)?.removePrefix("ERR:") ?: ""
-            ShellResult(out, err, exit)
-        } catch (e: Exception) {
-            ShellResult("", e.message ?: "IPC error", -1)
-        }
+            val parts = raw.split("\n", limit = 3)
+            ShellResult(
+                parts.getOrNull(1)?.removePrefix("OUT:") ?: "",
+                parts.getOrNull(2)?.removePrefix("ERR:") ?: "",
+                parts.getOrNull(0)?.removePrefix("EXIT:")?.toIntOrNull() ?: -1
+            )
+        }.getOrElse { e -> err(e.message ?: "IPC error") }
     }
 
-    /**
-     * Grant WRITE_SECURE_SETTINGS (and WRITE_SETTINGS) to this app via Shizuku.
-     * Call once on setup. After this the app can use Settings.Secure.putString() directly.
-     */
     suspend fun grantSelfPermissions(packageName: String): ShellResult = withContext(Dispatchers.IO) {
-        val grants = listOf(
-            "pm grant $packageName android.permission.WRITE_SECURE_SETTINGS",
-            "pm grant $packageName android.permission.WRITE_SETTINGS"
-        )
-        var last = ShellResult("", "", 0)
-        for (cmd in grants) {
-            last = exec(cmd)
-            Log.d(TAG, "grant result: $last")
-        }
-        last
+        val r1 = exec("pm grant $packageName android.permission.WRITE_SECURE_SETTINGS")
+        val r2 = exec("pm grant $packageName android.permission.WRITE_SETTINGS")
+        Log.d(TAG, "grant WRITE_SECURE_SETTINGS: $r1")
+        Log.d(TAG, "grant WRITE_SETTINGS: $r2")
+        r1
     }
+
+    private fun err(msg: String) = ShellResult("", msg, -1)
 }
