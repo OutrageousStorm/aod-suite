@@ -20,15 +20,13 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+          cache: gradle
 
       - name: Make gradlew executable
         run: chmod +x gradlew
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -68,7 +66,7 @@ jobs:
 
             ### Known limitations in this WIP
             - Blurred wallpaper path works on AOSP/Pixel; Samsung & Xiaomi may need a different path
-            - Brightness float setting device-dependent (most Pixels + Motorola confirmed working)
+            - Brightness float setting is device-dependent (Pixels + Motorola confirmed)
             - No UI polish yet
 
             ---
