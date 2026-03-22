@@ -1,6 +1,5 @@
 package com.outrageousstorm.aodsuite.ui
 
-import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,12 +17,10 @@ data class UiState(
     val brightnessPercent: Int = 20,
     val blurRadius: Int = 12,
     val selectedImageUri: Uri? = null,
-    val aodTap: Boolean = true,
-    val raiseToWake: Boolean = true,
     val nightMode: Boolean = false,
     val nightTemp: Int = 3200,
     val aodTimeoutSec: Int = 0,
-    val statusMessage: String = "Ready — connect Shizuku then tap Setup",
+    val statusMessage: String = "Connect Shizuku → tap Setup → done",
     val loading: Boolean = false,
     val logOutput: String = ""
 )
@@ -36,116 +33,70 @@ class MainViewModel(
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
-    /**
-     * Called when Shizuku connection state changes.
-     * Does NOT call any IPC — just updates availability flags.
-     */
-    fun refresh(available: Boolean, granted: Boolean) {
-        _state.value = _state.value.copy(
-            shizukuAvailable = available,
-            shizukuGranted = granted
-        )
-        // Only read settings if we already know permissions are granted
-        if (granted && _state.value.permissionsGranted) {
-            readCurrentSettings()
-        }
+    fun refreshShizuku(available: Boolean, granted: Boolean) {
+        _state.value = _state.value.copy(shizukuAvailable = available, shizukuGranted = granted)
     }
 
-    fun setPermissionsGranted(granted: Boolean) {
-        _state.value = _state.value.copy(permissionsGranted = granted)
-        if (granted) readCurrentSettings()
-    }
-
-    private fun readCurrentSettings() = viewModelScope.launch {
-        try {
-            val aod = repo.getAodState()
-            val bright = repo.getCurrentBrightness()
-            _state.value = _state.value.copy(
-                aodEnabled = aod,
-                brightnessPercent = if (bright >= 0) bright else _state.value.brightnessPercent
-            )
-        } catch (_: Exception) { /* silent — not critical */ }
-    }
-
-    /** One-time setup: grant WRITE_SECURE_SETTINGS to this app via Shizuku */
-    fun grantPermissions() = launch("Setup — granting permissions") {
+    fun grantPermissions() = run("Setup") {
         val r = repo.grantPermissions(packageName)
         if (r.success) {
             _state.value = _state.value.copy(permissionsGranted = true)
-            readCurrentSettings()
             "✅ Permissions granted! All features unlocked."
         } else {
-            "❌ Grant failed: ${r.stderr.take(120)}"
+            "❌ Grant failed: ${r.stderr.take(100)}"
         }
     }
 
-    fun setAod(enabled: Boolean) = launch("Toggle AOD") {
+    fun setAod(enabled: Boolean) = run("Toggle AOD") {
         val r = repo.enableAod(enabled)
         if (r.success) _state.value = _state.value.copy(aodEnabled = enabled)
-        if (r.success) "✅ AOD ${if (enabled) "enabled" else "disabled"}"
-        else "❌ ${r.stderr.take(120)}"
+        if (r.success) "✅ AOD ${if (enabled) "on" else "off"}" else "❌ ${r.stderr.take(100)}"
     }
 
-    fun setMinBrightness(percent: Int) {
-        _state.value = _state.value.copy(brightnessPercent = percent)
-    }
+    fun setMinBrightness(pct: Int) { _state.value = _state.value.copy(brightnessPercent = pct) }
 
-    fun applyMinBrightness() = launch("Apply brightness") {
+    fun applyMinBrightness() = run("Apply brightness") {
         val r = repo.setMinBrightness(_state.value.brightnessPercent)
-        if (r.success) "✅ Brightness set to ${_state.value.brightnessPercent}%"
-        else "❌ ${r.stderr.take(120)}"
+        if (r.success) "✅ Brightness → ${_state.value.brightnessPercent}%" else "❌ ${r.stderr.take(100)}"
     }
 
-    fun setBlurRadius(r: Int) { _state.value = _state.value.copy(blurRadius = r) }
-
+    fun setBlurRadius(v: Int) { _state.value = _state.value.copy(blurRadius = v) }
     fun setSelectedImage(uri: Uri?) { _state.value = _state.value.copy(selectedImageUri = uri) }
 
-    fun applyBlurredWallpaper() = launch("Apply blurred wallpaper") {
-        val uri = _state.value.selectedImageUri ?: return@launch "No image selected"
-        val result = repo.applyBlurredWallpaper(uri, _state.value.blurRadius)
-        result.getOrElse { "Error: ${it.message}" }
+    fun applyWallpaper() = run("Apply wallpaper") {
+        val uri = _state.value.selectedImageUri ?: return@run "No image selected"
+        repo.applyBlurredWallpaper(uri, _state.value.blurRadius).getOrElse { "Error: ${it.message}" }
     }
 
-    fun setAodTap(enabled: Boolean) = launch("Set tap gesture") {
-        _state.value = _state.value.copy(aodTap = enabled)
-        val r = repo.setAodTap(enabled)
-        if (r.success) "✅ Tap gesture ${if (enabled) "on" else "off"}" else "❌ ${r.stderr}"
+    fun setAodTap(on: Boolean) = run("Tap gesture") {
+        val r = repo.setAodTap(on); if (r.success) "✅ Tap ${if(on)"on"else"off"}" else "❌ ${r.stderr}"
     }
-
-    fun setRaiseToWake(enabled: Boolean) = launch("Set raise-to-wake") {
-        _state.value = _state.value.copy(raiseToWake = enabled)
-        val r = repo.setRaiseToWake(enabled)
-        if (r.success) "✅ Raise-to-wake ${if (enabled) "on" else "off"}" else "❌ ${r.stderr}"
+    fun setRaiseToWake(on: Boolean) = run("Raise-to-wake") {
+        val r = repo.setRaiseToWake(on); if (r.success) "✅ Raise ${if(on)"on"else"off"}" else "❌ ${r.stderr}"
     }
-
-    fun setNightMode(enabled: Boolean) = launch("Night mode") {
-        _state.value = _state.value.copy(nightMode = enabled)
-        val r = repo.setNightMode(enabled, _state.value.nightTemp)
-        if (r.success) "✅ Night mode ${if (enabled) "on" else "off"}" else "❌ ${r.stderr}"
+    fun setNightMode(on: Boolean) = run("Night mode") {
+        _state.value = _state.value.copy(nightMode = on)
+        val r = repo.setNightMode(on, _state.value.nightTemp)
+        if (r.success) "✅ Night ${if(on)"on"else"off"}" else "❌ ${r.stderr}"
     }
-
-    fun setNightTemp(kelvin: Int) = launch("Night temperature") {
-        _state.value = _state.value.copy(nightTemp = kelvin)
-        val r = repo.setNightMode(_state.value.nightMode, kelvin)
-        if (r.success) "✅ Temp: ${kelvin}K" else "❌ ${r.stderr}"
+    fun setNightTemp(k: Int) = run("Night temp") {
+        _state.value = _state.value.copy(nightTemp = k)
+        val r = repo.setNightMode(_state.value.nightMode, k)
+        if (r.success) "✅ ${k}K" else "❌ ${r.stderr}"
     }
-
-    fun setAodTimeout(seconds: Int) = launch("AOD timeout") {
-        _state.value = _state.value.copy(aodTimeoutSec = seconds)
-        val r = repo.setAodTimeout(seconds)
-        if (r.success) "✅ Timeout: ${if (seconds == 0) "never" else "${seconds}s"}" else "❌ ${r.stderr}"
+    fun setAodTimeout(s: Int) = run("Timeout") {
+        _state.value = _state.value.copy(aodTimeoutSec = s)
+        val r = repo.setAodTimeout(s)
+        if (r.success) "✅ Timeout ${if(s==0)"never" else "${s}s"}" else "❌ ${r.stderr}"
     }
+    fun dumpSettings() = run("Dump") { repo.dumpAllSettings() }
 
-    fun dumpSettings() = launch("Dump settings") { repo.dumpAllSettings() }
-
-    private fun launch(opName: String, block: suspend () -> String) =
-        viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, statusMessage = "$opName...")
-            val msg = try { block() } catch (e: Exception) { "❌ Exception: ${e.message?.take(100)}" }
-            _state.value = _state.value.copy(
-                loading = false,
-                statusMessage = msg,
-                logOutput = "${_state.value.logOutput}\n[$opName] $msg".takeLast(2000)
-            )
-        }
+    private fun run(op: String, block: suspend () -> String) = viewModelScope.launch {
+        _state.value = _state.value.copy(loading = true, statusMessage = "$op…")
+        val msg = runCatching { block() }.getOrElse { "❌ ${it.message?.take(80)}" }
+        _state.value = _state.value.copy(
+            loading = false, statusMessage = msg,
+            logOutput = (_state.value.logOutput + "\n[$op] $msg").takeLast(2000)
+        )
+    }
 }
