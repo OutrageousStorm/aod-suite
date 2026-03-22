@@ -3,7 +3,7 @@
 
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
-    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"/>
+    <!-- NOTE: WRITE_SECURE_SETTINGS is granted at runtime via Shizuku (pm grant), NOT here -->
 
     <application
         android:allowBackup="true"
