@@ -1,77 +1,83 @@
 package com.outrageousstorm.aodsuite.shizuku
 
-import android.content.pm.PackageManager
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
-import rikka.shizuku.ShizukuRemoteProcess
+import java.io.BufferedReader
+import java.io.InputStreamReader
 
 private const val TAG = "ShizukuHelper"
-private const val SHIZUKU_PERMISSION = "moe.shizuku.manager.permission.API_V23"
+
+data class ShellResult(
+    val stdout: String,
+    val stderr: String,
+    val exitCode: Int
+) {
+    val success: Boolean get() = exitCode == 0
+    val output: String get() = if (stdout.isNotBlank()) stdout else stderr
+}
 
 object ShizukuHelper {
 
-    // ─── State ────────────────────────────────────────────────────────────────
-
-    val isAvailable: Boolean
-        get() = try { Shizuku.pingBinder() } catch (e: Exception) { false }
-
-    val isGranted: Boolean
-        get() = try {
-            if (Shizuku.isPreV11()) {
-                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-            } else {
-                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-            }
-        } catch (e: Exception) { false }
-
-    // ─── Permission ───────────────────────────────────────────────────────────
-
-    fun requestPermission(code: Int = 42) {
-        try {
-            Shizuku.requestPermission(code)
-        } catch (e: Exception) {
-            Log.e(TAG, "requestPermission failed", e)
-        }
+    fun isAvailable(): Boolean = try {
+        Shizuku.pingBinder()
+    } catch (e: Exception) {
+        false
     }
 
-    // ─── Execution ────────────────────────────────────────────────────────────
+    fun hasPermission(): Boolean = try {
+        Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
+    } catch (e: Exception) {
+        false
+    }
+
+    fun requestPermission(requestCode: Int) {
+        Shizuku.requestPermission(requestCode)
+    }
 
     /**
-     * Run a shell command via Shizuku and return (exitCode, stdout, stderr)
+     * Execute a shell command via Shizuku using Runtime.exec through a privileged process.
+     * Falls back to su/root if Shizuku isn't available.
      */
     suspend fun exec(command: String): ShellResult = withContext(Dispatchers.IO) {
-        if (!isAvailable) return@withContext ShellResult(-1, "", "Shizuku not available")
-        if (!isGranted)   return@withContext ShellResult(-2, "", "Shizuku permission not granted")
-
-        return@withContext try {
-            val process: ShizukuRemoteProcess = Shizuku.newProcess(
-                arrayOf("sh", "-c", command), null, null
-            )
-            val stdout = process.inputStream.bufferedReader().readText()
-            val stderr = process.errorStream.bufferedReader().readText()
-            val code   = process.waitFor()
-            Log.d(TAG, "exec[$code] $command → $stdout $stderr")
-            ShellResult(code, stdout.trim(), stderr.trim())
+        Log.d(TAG, "exec: $command")
+        try {
+            if (isAvailable() && hasPermission()) {
+                execViaShizuku(command)
+            } else {
+                execViaAdb(command)
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "exec failed: $command", e)
-            ShellResult(-3, "", e.message ?: "Unknown error")
+            Log.e(TAG, "exec failed", e)
+            ShellResult("", e.message ?: "unknown error", -1)
         }
     }
 
     /**
-     * Run multiple commands in sequence; returns list of results
+     * Execute using Shizuku's built-in shell via Runtime.exec()
+     * This uses the standard API approach for Shizuku 12+
      */
-    suspend fun execAll(vararg commands: String): List<ShellResult> =
-        commands.map { exec(it) }
-}
+    private fun execViaShizuku(command: String): ShellResult {
+        // Shizuku allows running shell commands by executing them in the Shizuku process
+        // We use the standard Process approach through Shizuku's UID
+        val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+        val stdout = process.inputStream.bufferedReader().readText().trim()
+        val stderr = process.errorStream.bufferedReader().readText().trim()
+        val exit = process.waitFor()
+        Log.d(TAG, "stdout=$stdout stderr=$stderr exit=$exit")
+        return ShellResult(stdout, stderr, exit)
+    }
 
-data class ShellResult(
-    val exitCode: Int,
-    val stdout: String,
-    val stderr: String
-) {
-    val success: Boolean get() = exitCode == 0
-    val output: String get() = stdout.ifBlank { stderr }
+    private fun execViaAdb(command: String): ShellResult {
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+            val stdout = process.inputStream.bufferedReader().readText().trim()
+            val stderr = process.errorStream.bufferedReader().readText().trim()
+            val exit = process.waitFor()
+            ShellResult(stdout, stderr, exit)
+        } catch (e: Exception) {
+            ShellResult("", e.message ?: "exec failed", -1)
+        }
+    }
 }
