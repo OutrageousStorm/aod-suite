@@ -58,15 +58,14 @@ object ShizukuHelper {
             .daemon(false)
             .processNameSuffix("shell_service")
             .debuggable(false)
-            .version(1)
+            .version(2)
     }
 
     private suspend fun getService(): IShellService? {
         shellService?.let { return it }
-
         if (!isAvailable || !isGranted) return null
 
-        return withTimeoutOrNull(5_000) {
+        return withTimeoutOrNull(8_000) {
             suspendCancellableCoroutine { cont ->
                 val conn = object : ServiceConnection {
                     override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -90,25 +89,51 @@ object ShizukuHelper {
         }
     }
 
+    // ─── High-level helpers (used by AodRepository) ───────────────────────────
+
+    suspend fun putSecure(key: String, value: String): ShellResult = withContext(Dispatchers.IO) {
+        val svc = getService() ?: return@withContext noService()
+        val ok = try { svc.putSecure(key, value) } catch (e: Exception) { return@withContext error(e) }
+        if (ok) ShellResult(value, "", 0) else ShellResult("", "putSecure failed", 1)
+    }
+
+    suspend fun putSystem(key: String, value: String): ShellResult = withContext(Dispatchers.IO) {
+        val svc = getService() ?: return@withContext noService()
+        val ok = try { svc.putSystem(key, value) } catch (e: Exception) { return@withContext error(e) }
+        if (ok) ShellResult(value, "", 0) else ShellResult("", "putSystem failed", 1)
+    }
+
+    suspend fun putGlobal(key: String, value: String): ShellResult = withContext(Dispatchers.IO) {
+        val svc = getService() ?: return@withContext noService()
+        val ok = try { svc.putGlobal(key, value) } catch (e: Exception) { return@withContext error(e) }
+        if (ok) ShellResult(value, "", 0) else ShellResult("", "putGlobal failed", 1)
+    }
+
+    suspend fun getSecure(key: String): String = withContext(Dispatchers.IO) {
+        try { getService()?.getSecure(key) ?: "" } catch (e: Exception) { "" }
+    }
+
+    suspend fun getSystem(key: String): String = withContext(Dispatchers.IO) {
+        try { getService()?.getSystem(key) ?: "" } catch (e: Exception) { "" }
+    }
+
     suspend fun exec(command: String): ShellResult = withContext(Dispatchers.IO) {
         Log.d(TAG, "exec: $command")
-        if (!isAvailable) return@withContext ShellResult("", "Shizuku is not running", -1)
+        if (!isAvailable) return@withContext ShellResult("", "Shizuku not running", -1)
         if (!isGranted) return@withContext ShellResult("", "Shizuku permission not granted", -1)
-
-        val svc = getService()
-            ?: return@withContext ShellResult("", "Could not bind to shell service", -1)
-
+        val svc = getService() ?: return@withContext noService()
         try {
             val raw = svc.exec(command)
-            // Parse "EXIT:N\nOUT:stdout\nERR:stderr"
             val lines = raw.split("\n", limit = 3)
             val exit = lines.getOrNull(0)?.removePrefix("EXIT:")?.toIntOrNull() ?: -1
-            val out = lines.getOrNull(1)?.removePrefix("OUT:") ?: ""
-            val err = lines.getOrNull(2)?.removePrefix("ERR:") ?: ""
+            val out  = lines.getOrNull(1)?.removePrefix("OUT:") ?: ""
+            val err  = lines.getOrNull(2)?.removePrefix("ERR:") ?: ""
             ShellResult(out, err, exit)
         } catch (e: Exception) {
-            Log.e(TAG, "exec via service failed", e)
-            ShellResult("", e.message ?: "IPC failed", -1)
+            error(e)
         }
     }
+
+    private fun noService() = ShellResult("", "Could not bind to shell service", -1)
+    private fun error(e: Exception) = ShellResult("", e.message ?: "IPC error", -1)
 }
