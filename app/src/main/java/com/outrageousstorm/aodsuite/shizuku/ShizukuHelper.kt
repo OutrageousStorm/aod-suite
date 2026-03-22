@@ -58,13 +58,12 @@ object ShizukuHelper {
             .daemon(false)
             .processNameSuffix("shell_service")
             .debuggable(false)
-            .version(2)
+            .version(3)
     }
 
     private suspend fun getService(): IShellService? {
         shellService?.let { return it }
         if (!isAvailable || !isGranted) return null
-
         return withTimeoutOrNull(8_000) {
             suspendCancellableCoroutine { cont ->
                 val conn = object : ServiceConnection {
@@ -89,39 +88,11 @@ object ShizukuHelper {
         }
     }
 
-    // ─── High-level helpers (used by AodRepository) ───────────────────────────
-
-    suspend fun putSecure(key: String, value: String): ShellResult = withContext(Dispatchers.IO) {
-        val svc = getService() ?: return@withContext noService()
-        val ok = try { svc.putSecure(key, value) } catch (e: Exception) { return@withContext error(e) }
-        if (ok) ShellResult(value, "", 0) else ShellResult("", "putSecure failed", 1)
-    }
-
-    suspend fun putSystem(key: String, value: String): ShellResult = withContext(Dispatchers.IO) {
-        val svc = getService() ?: return@withContext noService()
-        val ok = try { svc.putSystem(key, value) } catch (e: Exception) { return@withContext error(e) }
-        if (ok) ShellResult(value, "", 0) else ShellResult("", "putSystem failed", 1)
-    }
-
-    suspend fun putGlobal(key: String, value: String): ShellResult = withContext(Dispatchers.IO) {
-        val svc = getService() ?: return@withContext noService()
-        val ok = try { svc.putGlobal(key, value) } catch (e: Exception) { return@withContext error(e) }
-        if (ok) ShellResult(value, "", 0) else ShellResult("", "putGlobal failed", 1)
-    }
-
-    suspend fun getSecure(key: String): String = withContext(Dispatchers.IO) {
-        try { getService()?.getSecure(key) ?: "" } catch (e: Exception) { "" }
-    }
-
-    suspend fun getSystem(key: String): String = withContext(Dispatchers.IO) {
-        try { getService()?.getSystem(key) ?: "" } catch (e: Exception) { "" }
-    }
-
     suspend fun exec(command: String): ShellResult = withContext(Dispatchers.IO) {
         Log.d(TAG, "exec: $command")
         if (!isAvailable) return@withContext ShellResult("", "Shizuku not running", -1)
         if (!isGranted) return@withContext ShellResult("", "Shizuku permission not granted", -1)
-        val svc = getService() ?: return@withContext noService()
+        val svc = getService() ?: return@withContext ShellResult("", "Could not bind shell service", -1)
         try {
             val raw = svc.exec(command)
             val lines = raw.split("\n", limit = 3)
@@ -130,10 +101,24 @@ object ShizukuHelper {
             val err  = lines.getOrNull(2)?.removePrefix("ERR:") ?: ""
             ShellResult(out, err, exit)
         } catch (e: Exception) {
-            error(e)
+            ShellResult("", e.message ?: "IPC error", -1)
         }
     }
 
-    private fun noService() = ShellResult("", "Could not bind to shell service", -1)
-    private fun error(e: Exception) = ShellResult("", e.message ?: "IPC error", -1)
+    /**
+     * Grant WRITE_SECURE_SETTINGS (and WRITE_SETTINGS) to this app via Shizuku.
+     * Call once on setup. After this the app can use Settings.Secure.putString() directly.
+     */
+    suspend fun grantSelfPermissions(packageName: String): ShellResult = withContext(Dispatchers.IO) {
+        val grants = listOf(
+            "pm grant $packageName android.permission.WRITE_SECURE_SETTINGS",
+            "pm grant $packageName android.permission.WRITE_SETTINGS"
+        )
+        var last = ShellResult("", "", 0)
+        for (cmd in grants) {
+            last = exec(cmd)
+            Log.d(TAG, "grant result: $last")
+        }
+        last
+    }
 }
