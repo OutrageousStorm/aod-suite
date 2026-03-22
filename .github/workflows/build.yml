@@ -1,0 +1,80 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AOD-Suite-debug-${{ github.sha }}
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30
+
+      - name: Create WIP Release (on push to main)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.0-wip
+          name: "v0.1.0-wip — Work In Progress Build"
+          body: |
+            ## ⚠️ WIP Build — Not for production use
+
+            This is an early development build of **AOD Suite**.
+
+            ### What's in this build
+            - ☀️ Minimum AOD brightness control (0–100%)
+            - 🌙 Enable / disable Always On Display
+            - 🖼 Blurred background wallpaper via Shizuku shell
+            - 👆 Tap-to-wake & raise-to-wake toggles
+            - 🌡️ Night mode colour temperature control
+            - ⏱️ AOD timeout control
+            - 🔋 Battery restriction bypass
+            - 🖥️ Live shell log output
+
+            ### Requirements
+            - Android 10+ (API 29+)
+            - [Shizuku](https://shizuku.rikka.app/) installed and running
+            - Grant AOD Suite the Shizuku permission on first launch
+
+            ### Install
+            Enable "Install from unknown sources" → install the APK → open Shizuku → grant permission to AOD Suite.
+
+            ### Known limitations in this WIP
+            - Blurred wallpaper path works on AOSP/Pixel; Samsung & Xiaomi may need a different path
+            - Brightness float setting device-dependent (most Pixels + Motorola confirmed working)
+            - No UI polish yet
+
+            ---
+            Built automatically by GitHub Actions from commit ${{ github.sha }}
+          files: app/build/outputs/apk/debug/*.apk
+          prerelease: true
+          make_latest: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
