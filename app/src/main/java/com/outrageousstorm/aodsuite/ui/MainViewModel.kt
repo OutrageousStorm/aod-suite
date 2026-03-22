@@ -20,7 +20,7 @@ data class UiState(
     val nightMode: Boolean = false,
     val nightTemp: Int = 3200,
     val aodTimeoutSec: Int = 0,
-    val statusMessage: String = "Connect Shizuku → tap Setup → done",
+    val statusMessage: String = "Connect Shizuku, then tap Setup",
     val loading: Boolean = false,
     val logOutput: String = ""
 )
@@ -41,23 +41,25 @@ class MainViewModel(
         val r = repo.grantPermissions(packageName)
         if (r.success) {
             _state.value = _state.value.copy(permissionsGranted = true)
-            "✅ Permissions granted! All features unlocked."
+            "Permissions granted! All features unlocked."
         } else {
-            "❌ Grant failed: ${r.stderr.take(100)}"
+            "Grant failed: ${r.stderr.take(100)}"
         }
     }
 
     fun setAod(enabled: Boolean) = run("Toggle AOD") {
         val r = repo.enableAod(enabled)
         if (r.success) _state.value = _state.value.copy(aodEnabled = enabled)
-        if (r.success) "✅ AOD ${if (enabled) "on" else "off"}" else "❌ ${r.stderr.take(100)}"
+        if (r.success) "AOD turned ${if (enabled) "on" else "off"}"
+        else "Failed: ${r.stderr.take(100)}"
     }
 
     fun setMinBrightness(pct: Int) { _state.value = _state.value.copy(brightnessPercent = pct) }
 
     fun applyMinBrightness() = run("Apply brightness") {
         val r = repo.setMinBrightness(_state.value.brightnessPercent)
-        if (r.success) "✅ Brightness → ${_state.value.brightnessPercent}%" else "❌ ${r.stderr.take(100)}"
+        if (r.success) "Brightness set to ${_state.value.brightnessPercent}%"
+        else "Failed: ${r.stderr.take(100)}"
     }
 
     fun setBlurRadius(v: Int) { _state.value = _state.value.copy(blurRadius = v) }
@@ -69,33 +71,42 @@ class MainViewModel(
     }
 
     fun setAodTap(on: Boolean) = run("Tap gesture") {
-        val r = repo.setAodTap(on); if (r.success) "✅ Tap ${if(on)"on"else"off"}" else "❌ ${r.stderr}"
+        val r = repo.setAodTap(on)
+        if (r.success) "Tap-to-wake ${if (on) "on" else "off"}" else "Failed: ${r.stderr}"
     }
+
     fun setRaiseToWake(on: Boolean) = run("Raise-to-wake") {
-        val r = repo.setRaiseToWake(on); if (r.success) "✅ Raise ${if(on)"on"else"off"}" else "❌ ${r.stderr}"
+        val r = repo.setRaiseToWake(on)
+        if (r.success) "Raise-to-wake ${if (on) "on" else "off"}" else "Failed: ${r.stderr}"
     }
+
     fun setNightMode(on: Boolean) = run("Night mode") {
         _state.value = _state.value.copy(nightMode = on)
         val r = repo.setNightMode(on, _state.value.nightTemp)
-        if (r.success) "✅ Night ${if(on)"on"else"off"}" else "❌ ${r.stderr}"
+        if (r.success) "Night mode ${if (on) "on" else "off"}" else "Failed: ${r.stderr}"
     }
+
     fun setNightTemp(k: Int) = run("Night temp") {
         _state.value = _state.value.copy(nightTemp = k)
         val r = repo.setNightMode(_state.value.nightMode, k)
-        if (r.success) "✅ ${k}K" else "❌ ${r.stderr}"
+        if (r.success) "Color temp: ${k}K" else "Failed: ${r.stderr}"
     }
+
     fun setAodTimeout(s: Int) = run("Timeout") {
         _state.value = _state.value.copy(aodTimeoutSec = s)
         val r = repo.setAodTimeout(s)
-        if (r.success) "✅ Timeout ${if(s==0)"never" else "${s}s"}" else "❌ ${r.stderr}"
+        if (r.success) "Timeout: ${if (s == 0) "never" else "${s}s"}"
+        else "Failed: ${r.stderr}"
     }
+
     fun dumpSettings() = run("Dump") { repo.dumpAllSettings() }
 
     private fun run(op: String, block: suspend () -> String) = viewModelScope.launch {
-        _state.value = _state.value.copy(loading = true, statusMessage = "$op…")
-        val msg = runCatching { block() }.getOrElse { "❌ ${it.message?.take(80)}" }
+        _state.value = _state.value.copy(loading = true, statusMessage = "$op...")
+        val msg = runCatching { block() }.getOrElse { "Error: ${it.message?.take(80)}" }
         _state.value = _state.value.copy(
-            loading = false, statusMessage = msg,
+            loading = false,
+            statusMessage = msg,
             logOutput = (_state.value.logOutput + "\n[$op] $msg").takeLast(2000)
         )
     }
