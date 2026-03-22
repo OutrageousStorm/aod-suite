@@ -27,7 +27,7 @@ jobs:
           gradle-version: '8.4'
 
       - name: Build debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -36,47 +36,15 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
-      - name: Delete existing pre-release
+      - name: Publish WIP Release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: |
-          gh release delete v0.1.0-wip --yes || true
-          git push origin :refs/tags/v0.1.0-wip || true
+          gh release delete v0.1.0-wip --yes 2>/dev/null || true
+          git push origin :refs/tags/v0.1.0-wip 2>/dev/null || true
+          gh release create v0.1.0-wip \
+            app/build/outputs/apk/debug/*.apk \
+            --title "v0.1.0-wip — Work In Progress Build" \
+            --notes "## WIP Build\n\nBuilt from commit ${{ github.sha }}\n\n**Requirements:** Android 10+, Shizuku running.\n\n**Install:** Unknown sources → install APK → Shizuku → grant permission." \
+            --prerelease
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create WIP Release
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v0.1.0-wip
-          name: "v0.1.0-wip — Work In Progress Build"
-          body: |
-            ## ⚠️ WIP Build — Not for production use
-
-            This is an early development build of **AOD Suite**.
-
-            ### What's in this build
-            - ☀️ Minimum AOD brightness control (0–100%)
-            - 🌙 Enable / disable Always On Display
-            - 🖼 Blurred background wallpaper via Shizuku shell
-            - 👆 Tap-to-wake & raise-to-wake toggles
-            - 🌡️ Night mode colour temperature control
-            - ⏱️ AOD timeout control
-            - 🔋 Battery restriction bypass
-            - 🖥️ Live shell log output
-
-            ### Requirements
-            - Android 10+ (API 29+)
-            - [Shizuku](https://shizuku.rikka.app/) installed and running
-            - Grant AOD Suite the Shizuku permission on first launch
-
-            ### Install
-            Enable "Install from unknown sources" → install the APK → open Shizuku → grant permission to AOD Suite.
-
-            ---
-            Built from commit ${{ github.sha }}
-          files: app/build/outputs/apk/debug/*.apk
-          prerelease: true
-          make_latest: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
