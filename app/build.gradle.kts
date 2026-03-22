@@ -24,7 +24,6 @@ android {
             )
         }
         debug {
-            // No applicationIdSuffix — keeps app ID stable so ShizukuProvider authority is consistent
             isDebuggable = true
         }
     }
@@ -40,6 +39,7 @@ android {
 
     buildFeatures {
         viewBinding = true
+        aidl = true
     }
 }
 
