@@ -1,5 +1,6 @@
 package com.outrageousstorm.aodsuite.ui
 
+import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -22,27 +23,48 @@ data class UiState(
     val nightMode: Boolean = false,
     val nightTemp: Int = 3200,
     val aodTimeoutSec: Int = 0,
-    val statusMessage: String = "Tap Setup to grant permissions",
+    val statusMessage: String = "Ready — connect Shizuku then tap Setup",
     val loading: Boolean = false,
     val logOutput: String = ""
 )
 
-class MainViewModel(private val repo: AodRepository, private val packageName: String) : ViewModel() {
+class MainViewModel(
+    private val repo: AodRepository,
+    private val packageName: String
+) : ViewModel() {
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
+    /**
+     * Called when Shizuku connection state changes.
+     * Does NOT call any IPC — just updates availability flags.
+     */
     fun refresh(available: Boolean, granted: Boolean) {
-        viewModelScope.launch {
-            val aod = if (granted) repo.getAodState() else false
-            val bright = if (granted) repo.getCurrentBrightness() else 20
-            _state.value = _state.value.copy(
-                shizukuAvailable = available,
-                shizukuGranted = granted,
-                aodEnabled = aod,
-                brightnessPercent = if (bright >= 0) bright else 20
-            )
+        _state.value = _state.value.copy(
+            shizukuAvailable = available,
+            shizukuGranted = granted
+        )
+        // Only read settings if we already know permissions are granted
+        if (granted && _state.value.permissionsGranted) {
+            readCurrentSettings()
         }
+    }
+
+    fun setPermissionsGranted(granted: Boolean) {
+        _state.value = _state.value.copy(permissionsGranted = granted)
+        if (granted) readCurrentSettings()
+    }
+
+    private fun readCurrentSettings() = viewModelScope.launch {
+        try {
+            val aod = repo.getAodState()
+            val bright = repo.getCurrentBrightness()
+            _state.value = _state.value.copy(
+                aodEnabled = aod,
+                brightnessPercent = if (bright >= 0) bright else _state.value.brightnessPercent
+            )
+        } catch (_: Exception) { /* silent — not critical */ }
     }
 
     /** One-time setup: grant WRITE_SECURE_SETTINGS to this app via Shizuku */
@@ -50,9 +72,10 @@ class MainViewModel(private val repo: AodRepository, private val packageName: St
         val r = repo.grantPermissions(packageName)
         if (r.success) {
             _state.value = _state.value.copy(permissionsGranted = true)
+            readCurrentSettings()
             "✅ Permissions granted! All features unlocked."
         } else {
-            "❌ Grant failed: ${r.stderr}"
+            "❌ Grant failed: ${r.stderr.take(120)}"
         }
     }
 
@@ -60,7 +83,7 @@ class MainViewModel(private val repo: AodRepository, private val packageName: St
         val r = repo.enableAod(enabled)
         if (r.success) _state.value = _state.value.copy(aodEnabled = enabled)
         if (r.success) "✅ AOD ${if (enabled) "enabled" else "disabled"}"
-        else "❌ ${r.stderr}"
+        else "❌ ${r.stderr.take(120)}"
     }
 
     fun setMinBrightness(percent: Int) {
@@ -70,16 +93,12 @@ class MainViewModel(private val repo: AodRepository, private val packageName: St
     fun applyMinBrightness() = launch("Apply brightness") {
         val r = repo.setMinBrightness(_state.value.brightnessPercent)
         if (r.success) "✅ Brightness set to ${_state.value.brightnessPercent}%"
-        else "❌ ${r.stderr}"
+        else "❌ ${r.stderr.take(120)}"
     }
 
-    fun setBlurRadius(r: Int) {
-        _state.value = _state.value.copy(blurRadius = r)
-    }
+    fun setBlurRadius(r: Int) { _state.value = _state.value.copy(blurRadius = r) }
 
-    fun setSelectedImage(uri: Uri?) {
-        _state.value = _state.value.copy(selectedImageUri = uri)
-    }
+    fun setSelectedImage(uri: Uri?) { _state.value = _state.value.copy(selectedImageUri = uri) }
 
     fun applyBlurredWallpaper() = launch("Apply blurred wallpaper") {
         val uri = _state.value.selectedImageUri ?: return@launch "No image selected"
@@ -117,14 +136,12 @@ class MainViewModel(private val repo: AodRepository, private val packageName: St
         if (r.success) "✅ Timeout: ${if (seconds == 0) "never" else "${seconds}s"}" else "❌ ${r.stderr}"
     }
 
-    fun dumpSettings() = launch("Dump settings") {
-        repo.dumpAllSettings()
-    }
+    fun dumpSettings() = launch("Dump settings") { repo.dumpAllSettings() }
 
     private fun launch(opName: String, block: suspend () -> String) =
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, statusMessage = "$opName...")
-            val msg = try { block() } catch (e: Exception) { "Exception: ${e.message}" }
+            val msg = try { block() } catch (e: Exception) { "❌ Exception: ${e.message?.take(100)}" }
             _state.value = _state.value.copy(
                 loading = false,
                 statusMessage = msg,
