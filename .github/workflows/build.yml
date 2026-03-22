@@ -36,6 +36,14 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
+      - name: Delete existing pre-release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          gh release delete v0.1.0-wip --yes || true
+          git push origin :refs/tags/v0.1.0-wip || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create WIP Release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: softprops/action-gh-release@v2
