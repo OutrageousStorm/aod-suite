@@ -501,7 +501,22 @@
                         android:textSize="11sp"
                         android:textColor="@color/text_secondary"
                         android:text=""/>
-                </ScrollView>
+                    <Button
+        android:id="@+id/btnSetup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="⚙️ Setup (Grant Permissions)"
+        android:visibility="gone"/>
+
+    <ProgressBar
+        android:id="@+id/progressBar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:indeterminate="true"
+        android:visibility="gone"/>
+
+</ScrollView>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
