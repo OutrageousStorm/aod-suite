@@ -3,7 +3,6 @@
 
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
-    <!-- NOTE: WRITE_SECURE_SETTINGS is granted at runtime via Shizuku (pm grant), NOT here -->
 
     <application
         android:allowBackup="true"
@@ -23,7 +22,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Shizuku provider -->
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"
@@ -33,5 +31,4 @@
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/>
 
     </application>
-
 </manifest>
