@@ -5,10 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.outrageousstorm.aodsuite.aod.AodRepository
 
-class MainViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
+class MainViewModelFactory(private val ctx: Context) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        val repo = AodRepository(context.cacheDir, context.contentResolver)
-        return MainViewModel(repo, context.packageName) as T
-    }
+    override fun <T : ViewModel> create(modelClass: Class<T>): T =
+        MainViewModel(AodRepository(ctx.cacheDir, ctx.contentResolver), ctx.packageName) as T
 }
