@@ -24,7 +24,7 @@ android {
             )
         }
         debug {
-            applicationIdSuffix = ".debug"
+            // No applicationIdSuffix — keeps app ID stable so ShizukuProvider authority is consistent
             isDebuggable = true
         }
     }
