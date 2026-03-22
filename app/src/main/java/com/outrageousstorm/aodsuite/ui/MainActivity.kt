@@ -52,7 +52,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupUi() {
-        // Shizuku connect
         binding.btnRequestShizuku.setOnClickListener {
             if (!ShizukuHelper.isAvailable) {
                 Toast.makeText(this, "Shizuku is not running. Install & start it first.", Toast.LENGTH_LONG).show()
@@ -61,7 +60,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // One-time setup — grants WRITE_SECURE_SETTINGS via Shizuku
+        // One-time setup: grant WRITE_SECURE_SETTINGS to this app via Shizuku
         binding.btnSetup.setOnClickListener {
             if (!ShizukuHelper.isAvailable || !ShizukuHelper.isGranted) {
                 Toast.makeText(this, "Connect Shizuku first", Toast.LENGTH_SHORT).show()
@@ -91,36 +90,38 @@ class MainActivity : AppCompatActivity() {
 
         binding.switchTap.setOnCheckedChangeListener { _, checked -> vm.setAodTap(checked) }
         binding.switchRaise.setOnCheckedChangeListener { _, checked -> vm.setRaiseToWake(checked) }
-
         binding.switchNightMode.setOnCheckedChangeListener { _, checked -> vm.setNightMode(checked) }
         binding.sliderNightTemp.addOnChangeListener { _, value, _ -> vm.setNightTemp(value.toInt()) }
         binding.sliderTimeout.addOnChangeListener { _, value, _ -> vm.setAodTimeout(value.toInt()) }
 
         binding.btnDump.setOnClickListener { vm.dumpSettings() }
+        binding.btnClearLog.setOnClickListener {
+            binding.tvLog.text = ""
+        }
     }
 
     private fun observeState() {
         lifecycleScope.launch {
             vm.state.collect { s ->
-                // Shizuku status
                 binding.tvShizukuStatus.text = when {
-                    !s.shizukuAvailable -> "Shizuku: not running"
-                    !s.shizukuGranted   -> "Shizuku: running (tap to grant)"
-                    else                -> "Shizuku: connected ✓"
+                    !s.shizukuAvailable -> "⚠️ Shizuku not running"
+                    !s.shizukuGranted   -> "⚠️ Shizuku: tap to grant"
+                    else                -> "✓ Shizuku connected"
                 }
                 binding.btnRequestShizuku.visibility =
                     if (s.shizukuAvailable && s.shizukuGranted) View.GONE else View.VISIBLE
 
-                // Setup button — show until permissions are granted
+                // Show Setup button when Shizuku is ready but app permissions not yet granted
                 binding.btnSetup.visibility =
                     if (s.shizukuGranted && !s.permissionsGranted) View.VISIBLE else View.GONE
+
+                binding.progressBar.visibility = if (s.loading) View.VISIBLE else View.GONE
 
                 binding.switchAod.isChecked = s.aodEnabled
                 binding.tvBrightnessValue.text = "${s.brightnessPercent}%"
                 binding.tvBlurValue.text = "Radius: ${s.blurRadius}"
                 binding.tvStatus.text = s.statusMessage
                 binding.tvLog.text = s.logOutput
-                binding.progressBar.visibility = if (s.loading) View.VISIBLE else View.GONE
             }
         }
     }
