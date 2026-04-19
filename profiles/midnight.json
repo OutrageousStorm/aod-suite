@@ -1,0 +1,18 @@
+{
+  "name": "Midnight",
+  "description": "Dark theme with blue accent",
+  "brightness": 30,
+  "aod_background": {
+    "type": "gradient",
+    "colors": [
+      "#0a0e27",
+      "#16213e"
+    ],
+    "blur": 15
+  },
+  "clock_style": "digital_large",
+  "show_notifications": false,
+  "show_battery": true,
+  "clock_color": "#00bfff",
+  "background_opacity": 0.8
+}
