@@ -4,75 +4,74 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.BroadcastReceiver
+import android.os.Build
 import java.util.Calendar
 
-/**
- * AodScheduler — schedule AOD on/off times using AlarmManager.
- * Broadcasts ACTION_AOD_ON / ACTION_AOD_OFF at user-configured times.
- */
 class AodScheduler(private val context: Context) {
-
-    companion object {
-        const val ACTION_AOD_ON  = "com.outrageousstorm.aodsuite.AOD_ON"
-        const val ACTION_AOD_OFF = "com.outrageousstorm.aodsuite.AOD_OFF"
-        private const val REQUEST_ON  = 101
-        private const val REQUEST_OFF = 102
-    }
-
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
     /**
-     * Schedule AOD to turn on at [onHour]:[onMinute] and off at [offHour]:[offMinute] daily.
+     * Schedule AOD to turn on at a specific time
+     * Example: scheduleOn(6, 30) turns on AOD at 6:30 AM
      */
-    fun schedule(onHour: Int, onMinute: Int, offHour: Int, offMinute: Int) {
-        scheduleAlarm(ACTION_AOD_ON,  onHour,  onMinute,  REQUEST_ON)
-        scheduleAlarm(ACTION_AOD_OFF, offHour, offMinute, REQUEST_OFF)
-    }
-
-    fun cancel() {
-        cancelAlarm(ACTION_AOD_ON,  REQUEST_ON)
-        cancelAlarm(ACTION_AOD_OFF, REQUEST_OFF)
-    }
-
-    private fun scheduleAlarm(action: String, hour: Int, minute: Int, requestCode: Int) {
-        val intent = Intent(action).setPackage(context.packageName)
-        val pi = PendingIntent.getBroadcast(
-            context, requestCode, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val cal = Calendar.getInstance().apply {
+    fun scheduleOn(hour: Int, minute: Int) {
+        val calendar = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, hour)
             set(Calendar.MINUTE, minute)
-            set(Calendar.SECOND, 0)
-            if (before(Calendar.getInstance())) add(Calendar.DAY_OF_YEAR, 1)
+            if (before(Calendar.getInstance())) {
+                add(Calendar.DAY_OF_MONTH, 1)
+            }
         }
-        alarmManager.setRepeating(
-            AlarmManager.RTC_WAKEUP,
-            cal.timeInMillis,
-            AlarmManager.INTERVAL_DAY,
-            pi
+        val intent = Intent(context, AodScheduleReceiver::class.java).apply {
+            action = "com.outrageousstorm.aodsuite.AOD_ON"
+        }
+        val pendingIntent = PendingIntent.getBroadcast(
+            context, 1001, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-    }
-
-    private fun cancelAlarm(action: String, requestCode: Int) {
-        val intent = Intent(action).setPackage(context.packageName)
-        val pi = PendingIntent.getBroadcast(
-            context, requestCode, intent,
-            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-        ) ?: return
-        alarmManager.cancel(pi)
-        pi.cancel()
-    }
-}
-
-/** Receives scheduled AOD alarms and applies the setting */
-class AodScheduleReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        val repo = AodRepository(context)
-        when (intent.action) {
-            AodScheduler.ACTION_AOD_ON  -> repo.setAodEnabled(true)
-            AodScheduler.ACTION_AOD_OFF -> repo.setAodEnabled(false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            alarmManager.canScheduleExactAlarms() && 
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent
+                )
+        } else {
+            alarmManager.setAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent
+            )
         }
+    }
+
+    fun scheduleOff(hour: Int, minute: Int) {
+        val calendar = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, hour)
+            set(Calendar.MINUTE, minute)
+            if (before(Calendar.getInstance())) {
+                add(Calendar.DAY_OF_MONTH, 1)
+            }
+        }
+        val intent = Intent(context, AodScheduleReceiver::class.java).apply {
+            action = "com.outrageousstorm.aodsuite.AOD_OFF"
+        }
+        val pendingIntent = PendingIntent.getBroadcast(
+            context, 1002, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            alarmManager.canScheduleExactAlarms() &&
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent
+                )
+        } else {
+            alarmManager.setAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent
+            )
+        }
+    }
+
+    fun cancelSchedules() {
+        val intent1 = Intent(context, AodScheduleReceiver::class.java).apply { action = "com.outrageousstorm.aodsuite.AOD_ON" }
+        val intent2 = Intent(context, AodScheduleReceiver::class.java).apply { action = "com.outrageousstorm.aodsuite.AOD_OFF" }
+        alarmManager.cancel(PendingIntent.getBroadcast(context, 1001, intent1, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+        alarmManager.cancel(PendingIntent.getBroadcast(context, 1002, intent2, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
     }
 }
