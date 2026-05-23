@@ -50,3 +50,18 @@ If this saved you from rooting your phone → [☕ Ko-fi](https://ko-fi.com/outr
 
 ---
 MIT License
+
+## aod-config-generator.ts
+Generate custom Always-on-Display layouts, clock formats, and notification configs.
+
+**Usage:**
+```bash
+npx ts-node tools/aod-config-generator.ts
+```
+
+**Features:**
+- Configurable display modes (default, minimal, custom)
+- Clock format selection (12h / 24h)
+- Battery and notification display toggles
+- Refresh rate configuration
+- XML layout generation
